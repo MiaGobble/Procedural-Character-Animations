@@ -1,0 +1,16 @@
+{
+  "name": "Procedural-Character-Animations",
+  "tree": {
+    "$className": "DataModel",
+
+    "ReplicatedFirst": {
+      "ProceduralAnimation": {
+        "Packages": {
+          "$path": "Packages"
+        },
+
+        "$path": "src"
+      }
+    }
+  }
+}

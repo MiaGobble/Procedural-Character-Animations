@@ -1,0 +1,8 @@
+[package]
+name = "c5599/procedural-character-animations"
+version = "0.1.0"
+registry = "https://github.com/UpliftGames/wally-index"
+realm = "shared"
+
+[dependencies]
+epoxyish = "miagobble/epoxyish@0.1.0"
