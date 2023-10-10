@@ -1,16 +1,17 @@
 local kinematicUtility = {}
 
-function kinematicUtility.solveLimbIK(origin : CFrame, target : CFrame, upperLimbLength : number, lowerLimbLength : number)
-    local limbDifference = (target.Position - origin.Position)
+function kinematicUtility.solveLimbIK(origin : CFrame, target : Vector3, upperLimbLength : number, lowerLimbLength : number)
+    local limbDifference = origin:PointToObjectSpace(target) --(target.Position - origin.Position)
     local limbUnitDirection = limbDifference.Unit
     local limbLength = limbDifference.Magnitude
     
-    local x = Vector3.new(0, 0, 1):Cross(-limbUnitDirection)
+    local x = Vector3.new(0, 0, -1):Cross(-limbUnitDirection)
     local g = math.acos(-limbUnitDirection.Z)
     local plane = origin * CFrame.fromAxisAngle(x, g):Inverse()
     
-    if limbLength < math.max(upperLimbLength, lowerLimbLength) - math.min(upperLimbLength, lowerLimbLength) then
-        return plane * CFrame.new(0, 0, math.max(upperLimbLength, lowerLimbLength) - math.min(upperLimbLength, lowerLimbLength) - limbLength), -math.pi / 2, math.pi
+    if limbLength < math.max(lowerLimbLength, upperLimbLength) - math.min(lowerLimbLength, upperLimbLength) then
+        --p*CFrame.new(0,0,math.max(l1,l0)-math.min(l1,l0)-m),-HalfPi,Pi
+        return plane * CFrame.new(0, 0, math.max(lowerLimbLength, upperLimbLength) - math.min(lowerLimbLength, upperLimbLength) - limbLength), -math.pi / 2, math.pi
     elseif limbLength > upperLimbLength + lowerLimbLength then
         return plane, math.pi / 2, 0
     else
