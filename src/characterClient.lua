@@ -8,7 +8,9 @@ type characterClient = typeof(setmetatable({}, characterClient)) & {
     lastTick: number,
     raycastParams : RaycastParams,
     lastRootPosition : Vector3,
-    direction : Vector3
+    direction : Vector3,
+    speed : number,
+    movementPositionOffset : Vector3,
 }
 
 local playersService = game:GetService("Players")
@@ -26,7 +28,7 @@ local LEFT_HIP_CFRAME_2 = CFrame.new(-0.5,-2.7,0)
 local RIGHT_IDLE_CFRAME = CFrame.new(0.28, -1.9, 0.03) -- Idle CFrame of Motor6D joint
 local LEFT_IDLE_CFRAME = CFrame.new(-0.28, -1.9,-0.03) -- Idle CFrame of Motor6D joint
 local STRIDE_CFRAME = CFrame.new(0, 0, -config.legStride / 2)
-local RAYCAST_OFFSET = 0.3
+local RAYCAST_OFFSET = 0.1
 
 function characterClient.new(playerName) : characterClient
     local self = setmetatable({}, characterClient) :: characterClient
@@ -38,6 +40,8 @@ function characterClient.new(playerName) : characterClient
     self.raycastParams = RaycastParams.new()
     self.lastRootPosition = Vector3.new()
     self.direction = Vector3.xAxis + Vector3.zAxis
+    self.speed = 0
+    self.movementPositionOffset = Vector3.new()
 
     self:init()
     
@@ -50,10 +54,12 @@ end
 
 function characterClient:getCharacterMovementSpeed(frameDelta : number) : typeof(unpack({0, Vector3.new()}))
     if self.humanoidRootPart then
-        local frameDistance = (self.lastRootPosition - self.humanoidRootPart.Position) / frameDelta
+        local frameDistance = (self.humanoidRootPart.Position - self.lastRootPosition) / frameDelta
         local frameSpeed = frameDistance.Magnitude
 
         self.lastRootPosition = self.humanoidRootPart.Position
+        self.speed = frameSpeed
+        self.movementPositionOffset = frameDistance
 
         return frameSpeed, frameDistance
     else
@@ -149,15 +155,13 @@ function characterClient:doCharacterPartsExist() : boolean
     return true
 end
 
-function characterClient:getMovementState(delta) : string
-    local movementSpeed, movementPositionOffset = self:getCharacterMovementSpeed(delta)
-
-    if movementSpeed < 0.5 then -- Idle
+function characterClient:getMovementState() : string
+    if self.speed < 0.5 then -- Idle
         return "Idle"
     else -- Moving
-        if movementPositionOffset.Y > 20 then -- Jumping
+        if self.movementPositionOffset.Y > 20 then -- Jumping
             return "Jumping"
-        elseif movementPositionOffset.Y < -20 then -- Falling
+        elseif self.movementPositionOffset.Y < -20 then -- Falling
             return "Falling"
         else -- Running
             return "Running"
@@ -191,7 +195,7 @@ function characterClient:animateLeg(delta : number, rootCFrame : CFrame, lowerCF
         kneeMultiplication = config.kneeRotationAmplitude
         hipRotationAngle0 = if legId == "right" then -FOURTIETH_PI else FOURTIETH_PI
         hipRotationAngle1 = 0
-        desiredPos = (CFrame.new(ground, ground + self.direction) * CFrame.Angles(-self[`{legId}RotationAngle`], 0, 0) * STRIDE_CFRAME * CFrame.new(0.1,0,0)).Position
+        desiredPos = (CFrame.new(ground, ground + self.direction) * CFrame.Angles(-self[`{legId}RotationAngle`], 0, 0) * STRIDE_CFRAME * CFrame.new(-0.1,0,0)).Position
     end
 
     local offset = (desiredPos - hip)
@@ -199,10 +203,8 @@ function characterClient:animateLeg(delta : number, rootCFrame : CFrame, lowerCF
     local footPos = if raycastResult then raycastResult.Position else (hip + offset.Unit * (offset.Magnitude + RAYCAST_OFFSET))
 
     local plane, th1, th2 = kinematicUtility.solveLimbIK(lowerCFrame * self[`{legId}HipCFrame0`], footPos, 0.55, 1.15)
-    -- self.LeftHip.C0 = self.LeftHip.C0:Lerp(lowercf:toObjectSpace(plane)*CFrame.Angles(th1,hpmod,0),hipAlpha)
-	-- 		self.LeftKnee.C0 = self.LeftKnee.C0:Lerp(self.LeftKneeCFrame0*CFrame.Angles(th2*kneeRot,0,0),kneeAlpha)
-    self[`{legId}Hip`].C0 = self[`{legId}Hip`].C0:Lerp(lowerCFrame:ToObjectSpace(plane) * CFrame.Angles(th1, hipRotationAngle0, hipRotationAngle1), delta * 10)
-    self[`{legId}Knee`].C0 = self[`{legId}Knee`].C0:Lerp(self[`{legId}KneeCFrame0`] * CFrame.Angles(th2 * kneeMultiplication, 0, 0), delta * 10)
+    self[`{legId}Hip`].C0 = self[`{legId}Hip`].C0:Lerp(lowerCFrame:ToObjectSpace(plane) * CFrame.Angles(th1, hipRotationAngle0, hipRotationAngle1), delta * 15)
+    self[`{legId}Knee`].C0 = self[`{legId}Knee`].C0:Lerp(self[`{legId}KneeCFrame0`] * CFrame.Angles(th2 * kneeMultiplication, 0, 0), delta * 15)
 end
 
 function characterClient:onRenderStepped() : nil
@@ -213,25 +215,23 @@ function characterClient:onRenderStepped() : nil
 
     if self.character and self:doCharacterPartsExist() then
         local movementSpeed, movementVelocityVector = self:getCharacterMovementSpeed(delta)
-        local movementState = self:getMovementState(delta)
-        local cameraPosition = camera.CFrame.Position
+        local movementState = self:getMovementState()
+        --local cameraPosition = camera.CFrame.Position
         local lowerCFrame = self.targetBaseBart.CFrame
         local rootCFrame = self.humanoidRootPart.CFrame
-        local direction = movementVelocityVector.Unit
+        local direction = self.direction
 
         if movementState ~= "Running" then -- Don't animate if we are climbing, it looks weird
             direction = rootCFrame.LookVector
-            self.direction = direction
         else
             movementVelocityVector *= Vector3.new(1, 0, 1)
 
-            if movementVelocityVector.Magnitude > 0.5 then
-                direction = self.direction:Lerp(self.direction, delta10)
-                self.direction = direction
+            if movementSpeed > 0.5 then
+                direction = self.direction:Lerp(movementVelocityVector.Unit, delta10)
             end
         end
 
-        direction = self.direction
+        self.direction = direction
 
         local movementSpeedBase = movementSpeed / config.walkspeedReference
         local cycleBase = movementSpeedBase * delta * config.cycleSpeed
@@ -239,8 +239,8 @@ function characterClient:onRenderStepped() : nil
         self.rightRotationAngle = (self.rightRotationAngle + cycleBase) % (math.pi * 2)
         self.leftRotationAngle = (self.leftRotationAngle + cycleBase) % (math.pi * 2)
 
-        if movementSpeed > 0.5 then --// When moving
-            local relativeVelocity = lowerCFrame:vectorToObjectSpace(movementVelocityVector)
+        if movementState == "Running" then --// When moving
+            local relativeVelocity = lowerCFrame:vectorToObjectSpace(direction)
             local relativeVelocityDiv = relativeVelocity * 0.2
 
             -- Upper Torso
@@ -252,15 +252,15 @@ function characterClient:onRenderStepped() : nil
             , delta10)
             
             -- Legs
-            self:animateLeg(delta, rootCFrame, lowerCFrame, "right", true)
-            self:animateLeg(delta, rootCFrame, lowerCFrame, "left", true)
+            self:animateLeg(delta, rootCFrame, lowerCFrame, "right", false)
+            self:animateLeg(delta, rootCFrame, lowerCFrame, "left", false)
         else --// When not moving
             -- Upper Torso
             self.waistJoint.C1 = self.waistJoint.C1:Lerp(self.waistCFrame1, delta10)
 
             -- Legs
-            self:animateLeg(delta, rootCFrame, lowerCFrame, "right", false)
-            self:animateLeg(delta, rootCFrame, lowerCFrame, "left", false)
+            self:animateLeg(delta, rootCFrame, lowerCFrame, "right", true)
+            self:animateLeg(delta, rootCFrame, lowerCFrame, "left", true)
         end
     else
         self:updateCharacterMap()
